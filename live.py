@@ -18,7 +18,6 @@ def process(device, model, image, input_size, target_size):
             mode="bicubic",
             align_corners=False,
         )
-        
         .squeeze()
         .cpu()
         .numpy()
