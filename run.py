@@ -12,8 +12,11 @@ import numpy as np
 
 from imutils.video import VideoStream
 from midas.model_loader import default_models, load_model
+from datetime import datetime
 
 first_execution = True
+
+
 def process(device, model, model_type, image, input_size, target_size, optimize, use_camera):
     """
     Run the inference and interpolate.
@@ -102,7 +105,7 @@ def create_side_by_side(image, depth, grayscale):
         return np.concatenate((image, right_side), axis=1)
 
 
-def run(input_path, output_path, model_path, model_type="dpt_beit_large_512", optimize=False, side=False, height=None,
+def run(input_path, output_path, model_path, model_type="dpt_large_384", optimize=False, side=False, height=None,
         square=False, grayscale=False):
     """Run MonoDepthNN to compute depth maps.
 
@@ -163,7 +166,7 @@ def run(input_path, output_path, model_path, model_type="dpt_beit_large_512", op
                     utils.write_depth(filename, prediction, grayscale, bits=2)
                 else:
                     original_image_bgr = np.flip(original_image_rgb, 2)
-                    content = create_side_by_side(original_image_bgr*255, prediction, grayscale)
+                    content = create_side_by_side(original_image_bgr * 255, prediction, grayscale)
                     cv2.imwrite(filename + ".png", content)
                 utils.write_pfm(filename + ".pfm", prediction.astype(np.float32))
 
@@ -171,38 +174,40 @@ def run(input_path, output_path, model_path, model_type="dpt_beit_large_512", op
         with torch.no_grad():
             fps = 1
             video = VideoStream(0).start()
-            time_start = time.time()
+            time_start = datetime.now()
             frame_index = 0
             while True:
                 frame = video.read()
                 if frame is not None:
+                    frame = cv2.pyrDown(frame)
+
                     original_image_rgb = np.flip(frame, 2)  # in [0, 255] (flip required to get RGB)
-                    image = transform({"image": original_image_rgb/255})["image"]
+                    image = transform({"image": original_image_rgb / 255})["image"]
 
                     prediction = process(device, model, model_type, image, (net_w, net_h),
-                                         original_image_rgb.shape[1::-1], optimize, True)
-
-                    original_image_bgr = np.flip(original_image_rgb, 2) if side else None
+                                         original_image_rgb.shape[1::-1], optimize, True)                    
+                    original_image_bgr = np.flip(original_image_rgb, 2)
                     content = create_side_by_side(original_image_bgr, prediction, grayscale)
-                    cv2.imshow('MiDaS Depth Estimation - Press Escape to close window ', content/255)
+                    cv2.imshow('MiDaS Depth Estimation - Press Escape to close window ', content / 255)
 
                     if output_path is not None:
                         filename = os.path.join(output_path, 'Camera' + '-' + model_type + '_' + str(frame_index))
                         cv2.imwrite(filename + ".png", content)
 
                     alpha = 0.1
-                    if time.time()-time_start > 0:
-                        fps = (1 - alpha) * fps + alpha * 1 / (time.time()-time_start)  # exponential moving average
-                        time_start = time.time()
-                    print(f"\rFPS: {round(fps,2)}", end="")
-
+                    '''if datetime.time() - time_start > 0:
+                        fps = (1 - alpha) * fps + alpha * 1 / (time.time() - time_start)  # exponential moving average
+                       ''' 
+                    #print(f"\rFPS: {datetime.now() - time_start}, Distance to object: {round(distance_to_object, 3)}", end="")
+                    time_start = datetime.now()
                     if cv2.waitKey(1) == 27:  # Escape key
                         break
 
                     frame_index += 1
-        print()
-
+            cv2.destroyAllWindows()
+            video.stop()
     print("Finished")
+
 
 
 if __name__ == "__main__":
@@ -225,7 +230,7 @@ if __name__ == "__main__":
                         )
 
     parser.add_argument('-t', '--model_type',
-                        default='dpt_beit_large_512',
+                        default='dpt_large_384',
                         help='Model type: '
                              'dpt_beit_large_512, dpt_beit_large_384, dpt_beit_base_384, dpt_swin2_large_384, '
                              'dpt_swin2_base_384, dpt_swin2_tiny_256, dpt_swin_large_384, dpt_next_vit_large_384, '
@@ -263,7 +268,6 @@ if __name__ == "__main__":
                         )
 
     args = parser.parse_args()
-
 
     if args.model_weights is None:
         args.model_weights = default_models[args.model_type]
